@@ -1,0 +1,187 @@
+\documentclass{article}
+\usepackage[margin=1.0in]{geometry} % To set margins
+\usepackage{amsmath}  % This allows me to use the align functionality.
+                      % If you find yourself trying to replicate
+                      % something you found online, ensure you're
+                      % loading the necessary packages!
+\usepackage{amsfonts} % Math font
+\usepackage{fancyvrb}
+\usepackage{hyperref} % For including hyperlinks
+\usepackage[shortlabels]{enumitem}% For enumerated lists with labels specified
+                                  % We had to run tlmgr_install("enumitem") in R
+\usepackage{float}    % For telling R where to put a table/figure
+\usepackage{natbib}        %For the bibliography
+\bibliographystyle{apalike}%For the bibliography
+
+\begin{document}
+<<echo=F, message=F, warning=F>>=
+library(tidyverse)
+@
+In lecture 16, we looked at precipitation amounts in Madison County (at 
+Morrisville station). We found that the Weibull distribution had a good fit
+to the monthly precipitation amounts.\\
+
+We found that the MLEs for the Weibull distribution were 
+\begin{align*}
+    \hat{a}&=2.1871\\
+    \hat{\sigma}&=3.9683
+\end{align*}
+and
+\[-\mathcal{L}(\{\hat{a}, \hat{\sigma}\}|\mathbf{x}) = 2166.496\]
+is the realized negative log-likelihood.
+Note this means that the log-likelihood is
+\[\mathcal{L}(\{\hat{a}, \hat{\sigma}\}|\mathbf{x}) = -2166.496,\]
+and the usual likelihood is
+\[L(\{\hat{a}, \hat{\sigma}\}|\mathbf{x}) = e^{\left[\mathcal{L}(\{\hat{a}, \hat{\sigma}\}|\mathbf{x})\right]} \approx = e^{-2166.496},\]
+which \texttt{R} cannot differentiate from 0.
+
+\begin{enumerate}
+  \item Someone asked ``why Weibull?" in class. That is, why wouldn't we use 
+  another right-skewed distribution like the Gamma (see Lecture 15), or
+  the Log-Normal (see Lecture 17).
+  \begin{enumerate}
+    \item Compute the MLEs for these data using a Gamma distribution.
+
+\textbf{Solution:} The computed MLEs for these data using the gamma distribution turned out to be \[\hat{\alpha}=4.17, \hat{\beta}=1.19\]
+    
+    \item Compute the MLEs for these data using the Log-Normal distribution.
+    
+  \textbf{Solution:} The computed MLEs for these data using the gamma distribution turned out to be \[\hat{\mu}=1.131, \hat{\sigma}=0.533\]
+    
+    \item Compute the likelihood ratio to compare the Weibull and the Gamma distribution. 
+    Which has a better fit according to the likelhiood ratio?
+  \\
+  \textbf{Solution:} Since the likelihood ratio is greater than 1 that means that the Weibull distribution is a better fit for the data than the Gamma distribution.
+    \[Q = \frac{L(\{\hat{a}, \hat{\sigma}\}|\mathbf{x})}{L(\{\hat{\alpha}, \hat{\beta}\}|\mathbf{x})}=e^{\left[\mathcal{L}(\{\hat{a}, \hat{\sigma}\}|\mathbf{x}) - \mathcal{L}(\{\hat{\alpha}, \hat{\beta}\}|\mathbf{x})\right]}=1.0071\]
+    \item Compute the likelihood ratio to compare the Weibull and the Log-Normal distribution.
+    Which has a better fit according to the likelihood ratio?
+    \\
+    \textbf{Solution:} Since the likelihood ratio is less than 1 that means that the Log-Normal distribution is a better fit for the data than the Weibull distribution.
+    \\
+    \[Q = \frac{L(\{\hat{a}, \hat{\sigma}\}|\mathbf{x})}{L(\{\hat{\mu}, \hat{\sigma}\}|\mathbf{x})}=e^{\left[\mathcal{L}(\{\hat{a}, \hat{\sigma}\}|\mathbf{x}) - \mathcal{L}(\{\hat{\mu}, \hat{\sigma}\}|\mathbf{x})\right]}=0.9828\]
+    \item Compute the likelihood ratio to compare the Gamma and the Log-Normal distribution.
+    Which has a better fit according to the likelhiood ratio?
+    \\
+    \textbf{Solution:} Since the likelihood ratio is less than 1 that means that the Log-Normal distribution is a better fit for the data than the Gamma distribution.
+    \\
+    \[Q = \frac{L(\{\hat{\alpha}, \hat{\beta}\}|\mathbf{x})}{L(\{\hat{\mu}, \hat{\sigma}\}|\mathbf{x})}=e^{\left[\mathcal{L}(\{\hat{\alpha}, \hat{\beta}\}|\mathbf{x}) - \mathcal{L}(\{\hat{\mu}, \hat{\sigma}\}|\mathbf{x})\right]}=0.9759\]
+  \end{enumerate}
+  \item \textbf{CODE:}
+  \\
+<<message=F, warning=F, comment=''>>=
+library(tidyverse)
+library(nleqslv)
+library(patchwork)
+
+dat = read_csv("agacis.csv")
+
+dat.long <- dat |>    
+  dplyr::select(-Annual) |>                   # Remove annual column 
+  pivot_longer(cols = c(Jan, Feb, Mar, Apr,   # pivot the column data into one col
+                        May, Jun, Jul, Aug, 
+                        Sep, Oct, Nov, Dec), 
+               values_to = "Precipitation",   # store the values in Precipitation
+               names_to = "Month") |>         # store the months in Month
+  mutate(Precipitation = case_when(Precipitation == "M" ~ NA_character_,
+                                   TRUE                 ~ Precipitation))|>
+  mutate(Precipitation = as.numeric(Precipitation))
+
+### Weibull
+llweibull <- function(par, data, neg=F){
+  # a <- par[1]
+  # sigma <- par[2]
+  a <- exp(par[1]) # go from (-inf,inf) to (0,inf)
+  sigma <- exp(par[2]) # go from (-inf,inf) to (0,inf)
+  
+  ll <- sum(log(dweibull(x=data, shape=a, scale=sigma)), na.rm=T)
+  
+  return(ifelse(neg, -ll, ll))
+}
+
+weibulls = optim(fn = llweibull,
+              par = c(1,1),
+              data = dat.long$Precipitation,
+              neg=T)
+
+weibull.a = weibulls$par[1]
+weibull.sigma = weibulls$par[2]
+
+### Part A
+gamma.MLE = function(data, par, neg=F){
+  a = par[1]
+  b = par[2]
+  
+  loglik <- sum(log(dgamma(x=data, shape = a, rate = b)), na.rm = T)
+  
+  return(ifelse(neg, -loglik, loglik))
+}
+
+gammas = optim(par = c(1, 1), 
+              fn = gamma.MLE,
+              data=dat.long$Precipitation,
+              neg=T)
+
+gamma.a = gammas$par[1]
+gamma.b = gammas$par[2]
+
+dat.gamma <- tibble(x = seq(0,15,length.out=1000)) |>
+  mutate(pdf.mle = dgamma(x=x, shape=gammas$par[1], scale=gammas$par[2]))
+
+ggplot() +
+  geom_histogram(data = dat.long, aes(x = Precipitation, y = after_stat(density)),
+  breaks=seq(0, 15, 1),
+  color="grey")+
+  geom_hline(yintercept = 0)+
+  geom_line(data = dat.gamma, aes(x = x, y = pdf.mle))
+  
+  ###### PART B
+lnorm.MLE = function(data, par, neg=F){
+  mu = par[1]
+  sigma = par[2]
+  
+  loglik <- sum(log(dlnorm(x=data, meanlog = mu, sdlog = sigma)), na.rm = T)
+  
+  return(ifelse(neg, -loglik, loglik))
+}
+
+lnorms = optim(par = c(1, 1), 
+              fn = lnorm.MLE,
+              data=dat.long$Precipitation,
+              neg=T)
+
+lnorm.mu = lnorms$par[1]
+lnorm.sd = lnorms$par[2]
+
+dat.lnorm <- tibble(x = seq(0,15,length.out=1000)) |>
+  mutate(pdf.mle = dlnorm(x=x, meanlog=lnorms$par[1], sdlog=lnorms$par[2]))
+
+
+
+ggplot() +
+  geom_histogram(data = dat.long, aes(x = Precipitation, y = after_stat(density)),
+                 breaks=seq(0, 15, 1),
+                 color="grey")+
+  geom_hline(yintercept = 0)+
+  geom_line(data = dat.lnorm, aes(x = x, y = pdf.mle))
+
+#### Part C
+
+(weibull.gamma = llweibull(dat.long$Precipitation, par = weibulls$par)
+                /gamma.MLE(dat.long$Precipitation, par = gammas$par))
+
+#### Part D
+
+(weibull.lnorm = llweibull(dat.long$Precipitation, par = weibulls$par)
+  /lnorm.MLE(dat.long$Precipitation, par = lnorms$par))
+
+#### Part E
+
+(gamma.lnorm = gamma.MLE(dat.long$Precipitation, par = gammas$par)
+  /lnorm.MLE(dat.long$Precipitation, par = lnorms$par))
+  
+@
+  
+\end{enumerate}
+
+\bibliography{bibliography}
+\end{document}
